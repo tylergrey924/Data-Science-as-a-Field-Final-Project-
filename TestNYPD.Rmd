@@ -1,0 +1,112 @@
+---
+title: "NYPD_Data"
+author: "T. Grey"
+date: "2024-10-15"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+## Introduction
+
+In this analysis, we are exploring the dataset provided by NYC Open Data from the following source:
+
+[NYC Open Data - Link to the dataset]
+
+<https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD>
+
+### Setup
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=FALSE, warning=FALSE}
+
+library(tidyverse)
+library(lubridate)
+library(janitor)
+library(corrplot)
+
+url <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+nyc_data <- read_csv(url)
+
+nyc_data <- janitor::clean_names(nyc_data)
+
+head(nyc_data)
+summary(nyc_data)
+str(nyc_data)
+colnames(nyc_data)
+
+colSums(is.na(nyc_data))
+
+nyc_data <- nyc_data %>%
+  mutate(occur_date = mdy(occur_date))
+
+nyc_data <- nyc_data %>%
+  mutate(
+    hour_of_day = hour(occur_date),                       
+    day_of_week = wday(occur_date, label = TRUE),         
+    boro_num = as.numeric(factor(boro))                   
+  )
+
+# Plot number of incidents over time
+nyc_data_summary <- nyc_data %>%
+  group_by(occur_date) %>%
+  summarise(incident_count = n(), .groups = 'drop')
+
+ggplot(nyc_data_summary, aes(x = occur_date, y = incident_count)) +
+  geom_line(color = "darkgreen") +
+  labs(title = "Number of Incidents Over Time", 
+       x = "Date", 
+       y = "Number of Incidents") +
+  theme_minimal()
+
+# Histogram of incident counts
+numeric_cols <- nyc_data_summary %>% select_if(is.numeric)
+if (nrow(numeric_cols) > 0) {
+  ggplot(nyc_data_summary, aes(x = incident_count)) + 
+    geom_histogram(binwidth = 10, fill = "steelblue", color = "white") +
+    labs(title = "Distribution of Incidents", x = "Incident Count", y = "Frequency")
+} else {
+  print("No numeric columns found for histogram.")
+}
+
+boroughs_to_compare <- c("MANHATTAN", "BROOKLYN")
+
+filtered_data <- nyc_data %>%
+  filter(boro %in% boroughs_to_compare)
+
+incident_counts <- filtered_data %>%
+  group_by(boro) %>%
+  summarise(incident_count = n(), .groups = 'drop')  
+
+# Visualize the frequency of incidents by borough
+ggplot(incident_counts, aes(x = reorder(boro, -incident_count), y = incident_count, fill = boro)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Frequency of Incidents by Borough", 
+       x = "Borough", 
+       y = "Incident Count") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Correlation analysis
+filtered_incident_counts <- filtered_data %>%
+  group_by(boro) %>%
+  summarise(incident_count = n(), 
+            hour_of_day = hour(occur_date),
+            boro_num = as.numeric(factor(boro)),
+            .groups = 'drop')
+
+correlation_data <- filtered_incident_counts %>%
+  select(incident_count, hour_of_day, boro_num)
+
+if (nrow(correlation_data) > 0) {
+  cor_matrix <- cor(correlation_data, use = "complete.obs")
+  
+  # Visualize the correlation matrix
+  corrplot(cor_matrix, method = "circle", type = "lower", 
+           title = "Correlation Matrix of Incidents Data")
+} else {
+  print("No numeric columns found for correlation analysis.")
+}
